@@ -25,6 +25,7 @@ install_ufw() {
 
 # Function to fetch and update UFW rules from GitHub
 fetch_and_update_rules() {
+    local force_update="$1"
     local whitelist_file=$(mktemp)
     local out_ip_file=$(mktemp)
 
@@ -42,8 +43,9 @@ fetch_and_update_rules() {
         touch "$PREVIOUS_HASHES_FILE"
     fi
 
-    if [[ "$new_whitelist_hash" != "$previous_whitelist_hash" || "$new_out_ip_hash" != "$previous_out_ip_hash" ]]; then
-        echo "Configuration files have changed. Updating UFW rules..."
+    # Check if we should force the update
+    if [[ "$force_update" == "true" || "$new_whitelist_hash" != "$previous_whitelist_hash" || "$new_out_ip_hash" != "$previous_out_ip_hash" ]]; then
+        echo "Configuration files have changed or forced update. Updating UFW rules..."
         sudo ufw --force reset
 
         echo "Allowing new ports..."
@@ -116,6 +118,7 @@ delete_rule() {
     else
         echo "Failed to delete rule number $rule_number."
     fi
+    read -p "Press Enter to continue..."
 }
 
 # Function to remove all UFW rules
@@ -123,16 +126,26 @@ remove_all_rules() {
     echo "Removing all UFW rules..."
     sudo ufw --force reset
     echo "All UFW rules have been removed."
+    read -p "Press Enter to continue..."
 }
 
 # Function to set up a cron job for automatic updates
 setup_cron() {
     (crontab -l 2>/dev/null; echo "0 */3 * * * bash /usr/local/bin/ufwizard/ufwizard.sh 1") | crontab -
+    echo "Cron job for automatic updates has been set up."
+    read -p "Press Enter to continue..."
 }
 
 # Function to remove the cron job
 remove_cron() {
     crontab -l | grep -v 'bash /usr/local/bin/ufwizard/ufwizard.sh 1' | crontab -
+    echo "Cron job for automatic updates has been removed."
+    read -p "Press Enter to continue..."
+}
+
+# Function to force update UFW rules
+force_update() {
+    fetch_and_update_rules "true"
 }
 
 # Main menu
@@ -141,25 +154,27 @@ main_menu() {
         echo "UFWizard"
         echo "=============================="
         echo "1. Update UFW Rules from GitHub"
-        echo "2. Show current rules"
-        echo "3. Whitelist an IP address"
-        echo "4. Delete a specific rule"
-        echo "5. Remove all UFW rules"
-        echo "6. Set up cron job for automatic updates"
-        echo "7. Remove cron job for automatic updates"
-        echo "8. Exit"
+        echo "2. Force Update UFW Rules from GitHub"
+        echo "3. Show current rules"
+        echo "4. Whitelist an IP address"
+        echo "5. Delete a specific rule"
+        echo "6. Remove all UFW rules"
+        echo "7. Set up cron job for automatic updates"
+        echo "8. Remove cron job for automatic updates"
+        echo "9. Exit"
         echo "=============================="
         read -p "Choose an option: " option
 
         case $option in
-            1) fetch_and_update_rules ;;
-            2) show_rules ;;
-            3) whitelist_ip ;;
-            4) delete_rule ;;
-            5) remove_all_rules ;;
-            6) setup_cron ;;
-            7) remove_cron ;;
-            8) exit 0 ;;
+            1) fetch_and_update_rules "false" ;;
+            2) force_update ;;
+            3) show_rules ;;
+            4) whitelist_ip ;;
+            5) delete_rule ;;
+            6) remove_all_rules ;;
+            7) setup_cron ;;
+            8) remove_cron ;;
+            9) exit 0 ;;
             *) echo "Invalid option. Please try again." ;;
         esac
     done
@@ -170,7 +185,7 @@ main() {
     install_ufw
 
     case "$1" in
-        1) fetch_and_update_rules ;;  # Updated parameter from 3 to 1
+        1) fetch_and_update_rules "false" ;;  # Updated parameter from 3 to 1
         *) main_menu ;;
     esac
 }
