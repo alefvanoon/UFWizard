@@ -48,14 +48,14 @@ fetch_and_update_rules() {
 
         echo "Allowing new ports..."
         while IFS= read -r port; do
-            sudo ufw allow "$port" --force
+            sudo ufw allow "$port"
             echo "Allowed port $port"
         done < "$whitelist_file"
 
         echo "Blocking outgoing traffic to new IPs..."
         while IFS= read -r out_ip; do
             if [[ "$out_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?$ ]]; then
-                sudo ufw deny out to "$out_ip" --force
+                sudo ufw deny out to "$out_ip"
                 echo "Blocked outgoing traffic to $out_ip"
             else
                 echo "Invalid IP format: $out_ip"
@@ -65,7 +65,7 @@ fetch_and_update_rules() {
         echo "Allowing whitelisted IPs..."
         if [[ -f "$WHITELISTED_IPS_FILE" ]]; then
             while IFS= read -r ip; do
-                sudo ufw allow to "$ip" --force
+                sudo ufw allow to "$ip"
                 echo "Allowed incoming to $ip"
             done < "$WHITELISTED_IPS_FILE"
         else
