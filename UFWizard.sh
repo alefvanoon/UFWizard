@@ -44,7 +44,7 @@ fetch_and_update_rules() {
 
     if [[ "$new_whitelist_hash" != "$previous_whitelist_hash" || "$new_out_ip_hash" != "$previous_out_ip_hash" ]]; then
         echo "Configuration files have changed. Updating UFW rules..."
-        sudo ufw reset --force
+        sudo ufw --force reset
 
         echo "Allowing new ports..."
         while IFS= read -r port; do
@@ -73,7 +73,7 @@ fetch_and_update_rules() {
         fi
 
         echo "Enabling UFW..."
-        sudo ufw enable --force
+        sudo ufw --force enable
         echo "$new_whitelist_hash $new_out_ip_hash" > "$PREVIOUS_HASHES_FILE"
     else
         echo "No changes detected in configuration files."
@@ -111,7 +111,7 @@ show_rules() {
 # Function to delete a specific UFW rule by its number
 delete_rule() {
     read -p "Enter the rule number to delete: " rule_number
-    if sudo ufw delete "$rule_number" --force; then
+    if sudo ufw delete "$rule_number"; then
         echo "Deleted rule number $rule_number."
     else
         echo "Failed to delete rule number $rule_number."
@@ -121,7 +121,7 @@ delete_rule() {
 # Function to remove all UFW rules
 remove_all_rules() {
     echo "Removing all UFW rules..."
-    sudo ufw reset --force
+    sudo ufw --force reset
     echo "All UFW rules have been removed."
 }
 
