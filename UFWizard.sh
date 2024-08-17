@@ -4,27 +4,78 @@
 CONFIG_DIR="/usr/local/bin/ufwizard/config"
 mkdir -p "$CONFIG_DIR"
 
-# URL of the whitelist ports file
+# URLs for configuration files
 WHITELIST_URL="https://raw.githubusercontent.com/alefvanoon/UFWizard/main/config/allowed_ports.txt"
-
-# URL of the outgoing IP ranges file
 OUT_IP_FILE_URL="https://raw.githubusercontent.com/alefvanoon/UFWizard/main/config/blocked_out_ips.txt"
 
-# Path to the local whitelisted IPs file
+# Local paths
 WHITELISTED_IPS_FILE="$CONFIG_DIR/whitelisted_ips.txt"
-
-# Path to store previous hashes
 PREVIOUS_HASHES_FILE="$CONFIG_DIR/previous_hashes.txt"
 
 # Function to install UFW if not installed
 install_ufw() {
     if ! command -v ufw &> /dev/null; then
-        echo "UFW is not installed. Installing UFW..."
+        echo "UFW is not installed. Installing..."
         sudo apt update
         sudo apt install -y ufw
     else
         echo "UFW is already installed."
     fi
+}
+
+# Function to fetch and update UFW rules from GitHub
+fetch_and_update_rules() {
+    local whitelist_file=$(mktemp)
+    local out_ip_file=$(mktemp)
+
+    download_file "$WHITELIST_URL" "$whitelist_file"
+    download_file "$OUT_IP_FILE_URL" "$out_ip_file"
+
+    local new_whitelist_hash=$(generate_file_hash "$whitelist_file")
+    local new_out_ip_hash=$(generate_file_hash "$out_ip_file")
+
+    if [[ -f "$PREVIOUS_HASHES_FILE" ]]; then
+        read -r previous_whitelist_hash previous_out_ip_hash < "$PREVIOUS_HASHES_FILE"
+    else
+        previous_whitelist_hash=""
+        previous_out_ip_hash=""
+        touch "$PREVIOUS_HASHES_FILE"
+    fi
+
+    if [[ "$new_whitelist_hash" != "$previous_whitelist_hash" || "$new_out_ip_hash" != "$previous_out_ip_hash" ]]; then
+        echo "Configuration files have changed. Updating UFW rules..."
+        sudo ufw reset --force
+
+        echo "Allowing new ports..."
+        while IFS= read -r port; do
+            sudo ufw allow "$port" --force
+            echo "Allowed port $port"
+        done < "$whitelist_file"
+
+        echo "Blocking outgoing traffic to new IPs..."
+        while IFS= read -r out_ip; do
+            sudo ufw deny out to "$out_ip" --force
+            echo "Blocked outgoing traffic to $out_ip"
+        done < "$out_ip_file"
+
+        echo "Allowing whitelisted IPs..."
+        if [[ -f "$WHITELISTED_IPS_FILE" ]]; then
+            while IFS= read -r ip; do
+                sudo ufw allow to "$ip" --force
+                echo "Allowed incoming to $ip"
+            done < "$WHITELISTED_IPS_FILE"
+        else
+            echo "No whitelisted IPs found."
+        fi
+
+        echo "Enabling UFW..."
+        sudo ufw enable --force
+        echo "$new_whitelist_hash $new_out_ip_hash" > "$PREVIOUS_HASHES_FILE"
+    else
+        echo "No changes detected in configuration files."
+    fi
+
+    rm "$whitelist_file" "$out_ip_file"
 }
 
 # Function to download a file from a URL
@@ -36,79 +87,7 @@ download_file() {
 
 # Function to generate a hash of a file
 generate_file_hash() {
-    local file="$1"
-    sha256sum "$file" | awk '{print $1}'
-}
-
-# Function to update UFW rules from GitHub
-update_rules() {
-    # Temporary files to store downloaded content
-    local whitelist_file=$(mktemp)
-    local out_ip_file=$(mktemp)
-
-    # Download the files
-    download_file "$WHITELIST_URL" "$whitelist_file"
-    download_file "$OUT_IP_FILE_URL" "$out_ip_file"
-
-    # Generate hashes of the downloaded files
-    local new_whitelist_hash=$(generate_file_hash "$whitelist_file")
-    local new_out_ip_hash=$(generate_file_hash "$out_ip_file")
-
-    # Load previous hashes from a file (if it exists)
-    if [[ -f "$PREVIOUS_HASHES_FILE" ]]; then
-        read -r previous_whitelist_hash previous_out_ip_hash < "$PREVIOUS_HASHES_FILE"
-    else
-        previous_whitelist_hash=""
-        previous_out_ip_hash=""
-        # Create the file to avoid future errors
-        touch "$PREVIOUS_HASHES_FILE"
-    fi
-
-    # Check if the hashes have changed
-    if [[ "$new_whitelist_hash" != "$previous_whitelist_hash" || "$new_out_ip_hash" != "$previous_out_ip_hash" ]]; then
-        echo "Configuration files have changed. Updating UFW rules..."
-
-        # Reset UFW to clear all existing rules
-        echo "Resetting UFW to clear all existing rules..."
-        sudo ufw reset
-
-        # Allow the specified ports from anywhere
-        echo "Allowing new ports..."
-        while IFS= read -r port; do
-            sudo ufw allow "$port"
-            echo "Allowed port $port from anywhere"
-        done < "$whitelist_file"
-
-        # Block outgoing traffic to the specified IPs
-        echo "Blocking outgoing traffic to new IPs..."
-        while IFS= read -r out_ip; do
-            sudo ufw deny out to "$out_ip"
-            echo "Blocked outgoing traffic to $out_ip"
-        done < "$out_ip_file"
-
-        # Allow whitelisted IPs
-        echo "Allowing whitelisted IPs..."
-        if [[ -f "$WHITELISTED_IPS_FILE" ]]; then
-            while IFS= read -r ip; do
-                sudo ufw allow to "$ip"
-                echo "Allowed incoming to $ip"
-            done < "$WHITELISTED_IPS_FILE"
-        else
-            echo "No whitelisted IPs found."
-        fi
-
-        # Enable UFW to apply the new rules
-        echo "Enabling UFW..."
-        sudo ufw enable
-
-        # Store the new hashes for future comparisons
-        echo "$new_whitelist_hash $new_out_ip_hash" > "$PREVIOUS_HASHES_FILE"
-    else
-        echo "No changes detected in configuration files. No update needed."
-    fi
-
-    # Clean up temporary files
-    rm "$whitelist_file" "$out_ip_file"
+    sha256sum "$1" | awk '{print $1}'
 }
 
 # Function to whitelist an IP address
@@ -128,46 +107,55 @@ show_rules() {
 # Function to delete a specific UFW rule by its number
 delete_rule() {
     read -p "Enter the rule number to delete: " rule_number
-    if sudo ufw delete "$rule_number"; then
+    if sudo ufw delete "$rule_number" --force; then
         echo "Deleted rule number $rule_number."
     else
         echo "Failed to delete rule number $rule_number."
     fi
 }
 
-# Function to set up a cron job for updating the block list and allowing ports
+# Function to remove all UFW rules
+remove_all_rules() {
+    echo "Removing all UFW rules..."
+    sudo ufw reset --force
+    echo "All UFW rules have been removed."
+}
+
+# Function to set up a cron job for automatic updates
 setup_cron() {
-    # Add the cron job directly
-    (crontab -l 2>/dev/null; echo "0 */3 * * * bash /usr/local/bin/ufwizard/ufwizard.sh 3") | crontab -
+    (crontab -l 2>/dev/null; echo "0 */3 * * * bash /usr/local/bin/ufwizard/ufwizard.sh 1") | crontab -
 }
 
 # Function to remove the cron job
 remove_cron() {
-    # Remove the specific cron job
-    crontab -l | grep -v 'bash /usr/local/bin/ufwizard/ufwizard.sh 3' | crontab -
+    crontab -l | grep -v 'bash /usr/local/bin/ufwizard/ufwizard.sh 1' | crontab -
 }
 
 # Main menu
 main_menu() {
     while true; do
         echo "UFWizard"
-        echo "1. Show current rules"
-        echo "2. Delete a rule"
-        echo "3. Update rules from GitHub"
-        echo "4. Whitelist an IP address"
-        echo "5. Set up cron job for automatic updates"
-        echo "6. Remove cron job for automatic updates"
-        echo "7. Exit"
+        echo "=============================="
+        echo "1. Update UFW Rules from GitHub"
+        echo "2. Show current rules"
+        echo "3. Whitelist an IP address"
+        echo "4. Delete a specific rule"
+        echo "5. Remove all UFW rules"
+        echo "6. Set up cron job for automatic updates"
+        echo "7. Remove cron job for automatic updates"
+        echo "8. Exit"
+        echo "=============================="
         read -p "Choose an option: " option
 
         case $option in
-            1) show_rules ;;  # Show rules only when option 1 is selected
-            2) delete_rule ;;
-            3) update_rules ;;
-            4) whitelist_ip ;;
-            5) setup_cron ;;
-            6) remove_cron ;;
-            7) exit 0 ;;
+            1) fetch_and_update_rules ;;
+            2) show_rules ;;
+            3) whitelist_ip ;;
+            4) delete_rule ;;
+            5) remove_all_rules ;;
+            6) setup_cron ;;
+            7) remove_cron ;;
+            8) exit 0 ;;
             *) echo "Invalid option. Please try again." ;;
         esac
     done
@@ -175,16 +163,11 @@ main_menu() {
 
 # Main function to handle script parameters
 main() {
-    # Install UFW if not installed
     install_ufw
 
     case "$1" in
-        3)  # Update block list and allow ports
-            update_rules
-            ;;
-        *)
-            main_menu
-            ;;
+        1) fetch_and_update_rules ;;  # Updated parameter from 3 to 1
+        *) main_menu ;;
     esac
 }
 
