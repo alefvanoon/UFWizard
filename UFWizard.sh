@@ -1,18 +1,30 @@
 #!/bin/bash
 
-# Create necessary directories
+SCRIPT_URL="https://raw.githubusercontent.com/alefvanoon/UFWizard/main/UFWizard.sh"
+LOCAL_SCRIPT_PATH="/usr/local/bin/ufwizard/ufwizard.sh"
+
+check_and_save_script() {
+    if [[ ! -f "$LOCAL_SCRIPT_PATH" ]]; then
+        echo "Script not found at $LOCAL_SCRIPT_PATH. Downloading..."
+        curl -s -o "$LOCAL_SCRIPT_PATH" "$SCRIPT_URL"
+        chmod +x "$LOCAL_SCRIPT_PATH"
+        echo "Script saved to $LOCAL_SCRIPT_PATH."
+    else
+        echo "Script already exists at $LOCAL_SCRIPT_PATH."
+    fi
+}
+
+check_and_save_script
+
 CONFIG_DIR="/usr/local/bin/ufwizard/config"
 mkdir -p "$CONFIG_DIR"
 
-# URLs for configuration files
 WHITELIST_URL="https://raw.githubusercontent.com/alefvanoon/UFWizard/main/config/allowed_ports.txt"
 OUT_IP_FILE_URL="https://raw.githubusercontent.com/alefvanoon/UFWizard/main/config/blocked_out_ips.txt"
 
-# Local paths
 WHITELISTED_IPS_FILE="$CONFIG_DIR/whitelisted_ips.txt"
 PREVIOUS_HASHES_FILE="$CONFIG_DIR/previous_hashes.txt"
 
-# Function to install UFW if not installed
 install_ufw() {
     if ! command -v ufw &> /dev/null; then
         echo "UFW is not installed. Installing..."
@@ -23,7 +35,6 @@ install_ufw() {
     fi
 }
 
-# Function to fetch and update UFW rules from GitHub
 fetch_and_update_rules() {
     local force_update="$1"
     local whitelist_file=$(mktemp)
@@ -43,9 +54,8 @@ fetch_and_update_rules() {
         touch "$PREVIOUS_HASHES_FILE"
     fi
 
-    # Check if we should force the update
     if [[ "$force_update" == "true" || "$new_whitelist_hash" != "$previous_whitelist_hash" || "$new_out_ip_hash" != "$previous_out_ip_hash" ]]; then
-        echo "Configuration files have changed or forced update. Updating UFW rules..."
+        echo "Updating UFW rules..."
         sudo ufw --force reset
 
         echo "Allowing new ports..."
@@ -84,33 +94,28 @@ fetch_and_update_rules() {
     rm "$whitelist_file" "$out_ip_file"
 }
 
-# Function to download a file from a URL
 download_file() {
     local url="$1"
     local output_file="$2"
     curl -s -o "$output_file" "$url"
 }
 
-# Function to generate a hash of a file
 generate_file_hash() {
     sha256sum "$1" | awk '{print $1}'
 }
 
-# Function to whitelist an IP address
 whitelist_ip() {
     read -p "Enter the IP address to whitelist: " ip_address
     echo "$ip_address" >> "$WHITELISTED_IPS_FILE"
     echo "Whitelisted IP $ip_address."
 }
 
-# Function to display the current UFW rules
 show_rules() {
     echo "Current UFW Rules:"
     sudo ufw status
     read -p "Press Enter to continue..."
 }
 
-# Function to delete a specific UFW rule by its number
 delete_rule() {
     read -p "Enter the rule number to delete: " rule_number
     if sudo ufw delete "$rule_number"; then
@@ -121,7 +126,6 @@ delete_rule() {
     read -p "Press Enter to continue..."
 }
 
-# Function to remove all UFW rules
 remove_all_rules() {
     echo "Removing all UFW rules..."
     sudo ufw --force reset
@@ -129,26 +133,22 @@ remove_all_rules() {
     read -p "Press Enter to continue..."
 }
 
-# Function to set up a cron job for automatic updates
 setup_cron() {
-    (crontab -l 2>/dev/null; echo "0 */3 * * * bash /usr/local/bin/ufwizard/ufwizard.sh 1") | crontab -
+    (crontab -l 2>/dev/null; echo "0 */3 * * * bash $LOCAL_SCRIPT_PATH 1") | crontab -
     echo "Cron job for automatic updates has been set up."
     read -p "Press Enter to continue..."
 }
 
-# Function to remove the cron job
 remove_cron() {
-    crontab -l | grep -v 'bash /usr/local/bin/ufwizard/ufwizard.sh 1' | crontab -
+    crontab -l | grep -v "bash $LOCAL_SCRIPT_PATH 1" | crontab -
     echo "Cron job for automatic updates has been removed."
     read -p "Press Enter to continue..."
 }
 
-# Function to force update UFW rules
 force_update() {
     fetch_and_update_rules "true"
 }
 
-# Main menu
 main_menu() {
     while true; do
         echo "UFWizard"
@@ -180,15 +180,13 @@ main_menu() {
     done
 }
 
-# Main function to handle script parameters
 main() {
     install_ufw
 
     case "$1" in
-        1) fetch_and_update_rules "false" ;;  # Updated parameter from 3 to 1
+        1) fetch_and_update_rules "false" ;;
         *) main_menu ;;
     esac
 }
 
-# Run the main function with parameters
 main "$@"
