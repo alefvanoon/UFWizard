@@ -3,19 +3,6 @@
 SCRIPT_URL="https://raw.githubusercontent.com/alefvanoon/UFWizard/main/UFWizard.sh"
 LOCAL_SCRIPT_PATH="/usr/local/bin/ufwizard/ufwizard.sh"
 
-check_and_save_script() {
-    if [[ ! -f "$LOCAL_SCRIPT_PATH" ]]; then
-        echo "Script not found at $LOCAL_SCRIPT_PATH. Downloading..."
-        curl -s -o "$LOCAL_SCRIPT_PATH" "$SCRIPT_URL"
-        chmod +x "$LOCAL_SCRIPT_PATH"
-        echo "Script saved to $LOCAL_SCRIPT_PATH."
-    else
-        echo "Script already exists at $LOCAL_SCRIPT_PATH."
-    fi
-}
-
-check_and_save_script
-
 CONFIG_DIR="/usr/local/bin/ufwizard/config"
 mkdir -p "$CONFIG_DIR"
 
@@ -32,6 +19,17 @@ install_ufw() {
         sudo apt install -y ufw
     else
         echo "UFW is already installed."
+    fi
+}
+
+check_and_save_script() {
+    if [[ ! -f "$LOCAL_SCRIPT_PATH" ]]; then
+        echo "Script not found at $LOCAL_SCRIPT_PATH. Downloading..."
+        curl -s -o "$LOCAL_SCRIPT_PATH" "$SCRIPT_URL"
+        chmod +x "$LOCAL_SCRIPT_PATH"
+        echo "Script saved to $LOCAL_SCRIPT_PATH."
+    else
+        echo "Script already exists at $LOCAL_SCRIPT_PATH."
     fi
 }
 
@@ -134,6 +132,7 @@ remove_all_rules() {
 }
 
 setup_cron() {
+    check_and_save_script  # Check and save the script before setting up the cron job
     (crontab -l 2>/dev/null; echo "0 */3 * * * bash $LOCAL_SCRIPT_PATH 1") | crontab -
     echo "Cron job for automatic updates has been set up."
     read -p "Press Enter to continue..."
